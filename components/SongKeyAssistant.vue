@@ -90,7 +90,7 @@ export default {
       messages: [
         {
           type: 'assistant',
-          text: 'Hi! I can help you find the key of songs. Just ask me something like "What\'s the key of How Great is Our God by Chris Tomlin?" or "Key of Amazing Grace?"',
+          text: 'Hi! I can help you find the key of songs using Spotify and my local database. Just ask me something like "What\'s the key of How Great is Our God by Chris Tomlin?" or "Key of Amazing Grace?"',
           timestamp: new Date()
         }
       ],
@@ -100,14 +100,64 @@ export default {
         "What's the key of Amazing Grace?",
         "Key of Oceans by Hillsong United?",
         "What's the key of Let It Be by The Beatles?"
-      ]
+      ],
+      // JavaScript API instance
+      songAPI: null
     }
   },
+  
+  // Initialize the JavaScript API when component mounts
+  async mounted() {
+    try {
+      // Load the JavaScript API
+      await this.loadSongAPI();
+      console.log('✅ Song Key API loaded successfully');
+    } catch (error) {
+      console.error('❌ Failed to load Song Key API:', error);
+      this.messages[0] = {
+        type: 'assistant',
+        text: 'Warning: Could not load the song key API. Please ensure api/spotifyAPI.js is available.',
+        timestamp: new Date()
+      };
+    }
+  },
+  
   methods: {
+    // Load the JavaScript API
+    async loadSongAPI() {
+      // Check if API is already loaded globally
+      if (window.songKeyAPI) {
+        this.songAPI = window.songKeyAPI;
+        return;
+      }
+      
+      // Try to load the API script dynamically
+      return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = './api/spotifyAPI.js';
+        script.onload = () => {
+          if (window.songKeyAPI) {
+            this.songAPI = window.songKeyAPI;
+            resolve();
+          } else {
+            reject(new Error('API not found after loading script'));
+          }
+        };
+        script.onerror = () => reject(new Error('Failed to load API script'));
+        document.head.appendChild(script);
+      });
+    },
+
     async askQuestion(question = null) {
       const query = question || this.userInput.trim();
       
       if (!query) return;
+      
+      // Check if API is loaded
+      if (!this.songAPI) {
+        this.error = 'Song Key API not loaded. Please refresh the page.';
+        return;
+      }
       
       // Add user message
       this.messages.push({
@@ -122,28 +172,8 @@ export default {
       this.error = '';
       
       try {
-        // Try GET method first (most compatible)
-        const encodedQuery = encodeURIComponent(query);
-        let response = await fetch(`./song-key.php?q=${encodedQuery}`, {
-          method: 'GET'
-        });
-        
-        // If GET fails, try POST
-        if (!response.ok) {
-          response = await fetch('./song-key.php', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ query })
-          });
-        }
-        
-        if (!response.ok) {
-          throw new Error(`Server error: ${response.status}`);
-        }
-        
-        const data = await response.json();
+        // Use JavaScript API instead of PHP
+        const data = await this.songAPI.handleRequest(query);
         
         if (data.error) {
           throw new Error(data.error);
@@ -152,18 +182,26 @@ export default {
         // Add assistant response
         this.messages.push({
           type: 'assistant',
-          text: data.response,
+          text: data.response || 'No response received from API',
           timestamp: new Date()
         });
         
       } catch (error) {
         console.error('Error:', error);
         
-        this.error = `Error: ${error.message}`;
+        // Provide specific error messages
+        let errorMessage = error.message;
+        if (error.message.includes('Failed to fetch')) {
+          errorMessage = 'Network error - please check your internet connection';
+        } else if (error.message.includes('CORS')) {
+          errorMessage = 'CORS error - API access blocked by browser';
+        }
+        
+        this.error = `Error: ${errorMessage}`;
         
         this.messages.push({
           type: 'assistant',
-          text: 'Sorry, I encountered an error. Please check that the API is working and try again.',
+          text: `Sorry, I encountered an error: ${errorMessage}. Please try again.`,
           timestamp: new Date()
         });
       } finally {
