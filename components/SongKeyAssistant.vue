@@ -1,27 +1,31 @@
-// SongKeyAssistant.vue
 <template>
-  <div class="song-key-assistant">
+  <div class="song-assistant">
     <div class="chat-container">
-      <h2>🎵 AI Music Assistant</h2>
-      <p class="subtitle">Ask me about the key of any song!</p>
-      
-      <div class="chat-messages" ref="messagesContainer">
+      <!-- Header -->
+      <div class="header">
+        <h1>🎵 Song Key Assistant</h1>
+        <p>Ask me about the musical key of any song!</p>
+      </div>
+
+      <!-- Chat Messages -->
+      <div class="messages" ref="messagesContainer">
         <div 
           v-for="(message, index) in messages" 
-          :key="index" 
+          :key="index"
           :class="['message', message.type]"
         >
-          <div class="message-content">
+          <div class="bubble">
             {{ message.text }}
           </div>
-          <div class="message-time">
+          <div class="timestamp">
             {{ formatTime(message.timestamp) }}
           </div>
         </div>
-        
-        <div v-if="isLoading" class="message ai">
-          <div class="message-content">
-            <div class="typing-indicator">
+
+        <!-- Loading indicator -->
+        <div v-if="loading" class="message assistant">
+          <div class="bubble">
+            <div class="typing">
               <span></span>
               <span></span>
               <span></span>
@@ -29,39 +33,47 @@
           </div>
         </div>
       </div>
-      
-      <div class="input-section">
-        <div class="example-queries">
-          <p>Try asking:</p>
-          <button 
-            v-for="example in exampleQueries" 
-            :key="example"
-            @click="askQuestion(example)"
-            class="example-btn"
-          >
-            {{ example }}
-          </button>
+
+      <!-- Input Area -->
+      <div class="input-area">
+        <!-- Example buttons -->
+        <div class="examples">
+          <p>Try these examples:</p>
+          <div class="example-buttons">
+            <button 
+              v-for="example in examples" 
+              :key="example"
+              @click="askQuestion(example)"
+              class="example-btn"
+              :disabled="loading"
+            >
+              {{ example }}
+            </button>
+          </div>
         </div>
-        
-        <div class="input-group">
+
+        <!-- Input form -->
+        <div class="input-form">
           <input
             v-model="userInput"
             @keyup.enter="askQuestion()"
             @input="clearError"
             placeholder="What's the key of Amazing Grace?"
-            class="chat-input"
-            :disabled="isLoading"
+            class="text-input"
+            :disabled="loading"
           />
           <button 
             @click="askQuestion()" 
-            :disabled="isLoading || !userInput.trim()"
+            :disabled="loading || !userInput.trim()"
             class="send-btn"
           >
-            Send
+            <span v-if="!loading">Send</span>
+            <span v-else>...</span>
           </button>
         </div>
-        
-        <div v-if="error" class="error-message">
+
+        <!-- Error message -->
+        <div v-if="error" class="error">
           {{ error }}
         </div>
       </div>
@@ -77,17 +89,17 @@ export default {
       userInput: '',
       messages: [
         {
-          type: 'ai',
-          text: 'Hi! I can help you find the key of any song. Just ask me something like "What\'s the key of How Great is Our God by Chris Tomlin?"',
+          type: 'assistant',
+          text: 'Hi! I can help you find the key of songs. Just ask me something like "What\'s the key of How Great is Our God by Chris Tomlin?" or "Key of Amazing Grace?"',
           timestamp: new Date()
         }
       ],
-      isLoading: false,
+      loading: false,
       error: '',
-      exampleQueries: [
+      examples: [
         "What's the key of Amazing Grace?",
         "Key of Oceans by Hillsong United?",
-        "What's the key of How Great is Our God by Chris Tomlin?"
+        "What's the key of Let It Be by The Beatles?"
       ]
     }
   },
@@ -104,18 +116,32 @@ export default {
         timestamp: new Date()
       });
       
+      // Clear input and show loading
       this.userInput = '';
-      this.isLoading = true;
+      this.loading = true;
       this.error = '';
       
       try {
-        const response = await fetch('/api/song-key.php', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ query })
+        // Try GET method first (most compatible)
+        const encodedQuery = encodeURIComponent(query);
+        let response = await fetch(`./song-key.php?q=${encodedQuery}`, {
+          method: 'GET'
         });
+        
+        // If GET fails, try POST
+        if (!response.ok) {
+          response = await fetch('./song-key.php', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ query })
+          });
+        }
+        
+        if (!response.ok) {
+          throw new Error(`Server error: ${response.status}`);
+        }
         
         const data = await response.json();
         
@@ -123,25 +149,25 @@ export default {
           throw new Error(data.error);
         }
         
-        // Add AI response
+        // Add assistant response
         this.messages.push({
-          type: 'ai',
+          type: 'assistant',
           text: data.response,
           timestamp: new Date()
         });
         
       } catch (error) {
         console.error('Error:', error);
-        this.error = 'Sorry, something went wrong. Please try again.';
         
-        // Add error message to chat
+        this.error = `Error: ${error.message}`;
+        
         this.messages.push({
-          type: 'ai',
-          text: 'Sorry, I encountered an error while searching for that song. Please try again.',
+          type: 'assistant',
+          text: 'Sorry, I encountered an error. Please check that the API is working and try again.',
           timestamp: new Date()
         });
       } finally {
-        this.isLoading = false;
+        this.loading = false;
         this.$nextTick(() => {
           this.scrollToBottom();
         });
@@ -161,50 +187,57 @@ export default {
     
     scrollToBottom() {
       const container = this.$refs.messagesContainer;
-      container.scrollTop = container.scrollHeight;
+      if (container) {
+        container.scrollTop = container.scrollHeight;
+      }
     }
   }
 }
 </script>
 
 <style scoped>
-.song-key-assistant {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+.song-assistant {
+  max-width: 700px;
+  margin: 20px auto;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 .chat-container {
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   overflow: hidden;
+  border: 1px solid #e1e5e9;
 }
 
-h2 {
-  text-align: center;
+.header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  margin: 0;
-  padding: 20px;
-}
-
-.subtitle {
+  padding: 24px;
   text-align: center;
-  color: #666;
-  margin: 15px 0;
 }
 
-.chat-messages {
+.header h1 {
+  margin: 0 0 8px 0;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.header p {
+  margin: 0;
+  opacity: 0.9;
+  font-size: 16px;
+}
+
+.messages {
   height: 400px;
   overflow-y: auto;
   padding: 20px;
-  background: #f8f9fa;
+  background: #fafbfc;
 }
 
 .message {
-  margin-bottom: 15px;
+  margin-bottom: 16px;
   display: flex;
   flex-direction: column;
 }
@@ -213,41 +246,46 @@ h2 {
   align-items: flex-end;
 }
 
-.message.ai {
+.message.assistant {
   align-items: flex-start;
 }
 
-.message-content {
-  max-width: 80%;
+.bubble {
+  max-width: 85%;
   padding: 12px 16px;
-  border-radius: 18px;
+  border-radius: 20px;
   word-wrap: break-word;
+  line-height: 1.4;
 }
 
-.message.user .message-content {
+.message.user .bubble {
   background: #007bff;
   color: white;
+  border-bottom-right-radius: 6px;
 }
 
-.message.ai .message-content {
+.message.assistant .bubble {
   background: white;
-  border: 1px solid #e0e0e0;
   color: #333;
+  border: 1px solid #e1e5e9;
+  border-bottom-left-radius: 6px;
 }
 
-.message-time {
-  font-size: 11px;
-  color: #888;
+.timestamp {
+  font-size: 12px;
+  color: #8e9297;
   margin-top: 4px;
-  padding: 0 8px;
+  margin-left: 12px;
+  margin-right: 12px;
 }
 
-.typing-indicator {
+.typing {
   display: flex;
   gap: 4px;
+  padding: 4px 0;
 }
 
-.typing-indicator span {
+.typing span {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -255,70 +293,81 @@ h2 {
   animation: typing 1.4s infinite ease-in-out;
 }
 
-.typing-indicator span:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.typing-indicator span:nth-child(3) {
-  animation-delay: 0.4s;
-}
+.typing span:nth-child(2) { animation-delay: 0.2s; }
+.typing span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes typing {
-  0%, 60%, 100% {
-    transform: translateY(0);
-  }
-  30% {
-    transform: translateY(-10px);
-  }
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-8px); }
 }
 
-.input-section {
+.input-area {
   padding: 20px;
   background: white;
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid #e1e5e9;
 }
 
-.example-queries {
-  margin-bottom: 15px;
+.examples {
+  margin-bottom: 16px;
 }
 
-.example-queries p {
+.examples p {
   margin: 0 0 8px 0;
   font-size: 14px;
-  color: #666;
+  color: #6c757d;
+  font-weight: 500;
+}
+
+.example-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .example-btn {
-  background: #f1f3f4;
-  border: none;
-  padding: 6px 12px;
-  margin: 2px 4px;
-  border-radius: 15px;
-  font-size: 12px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 8px 12px;
+  border-radius: 16px;
+  font-size: 13px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  color: #495057;
 }
 
-.example-btn:hover {
-  background: #e8eaed;
+.example-btn:hover:not(:disabled) {
+  background: #e9ecef;
+  border-color: #adb5bd;
 }
 
-.input-group {
+.example-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.input-form {
   display: flex;
-  gap: 10px;
+  gap: 12px;
+  align-items: center;
 }
 
-.chat-input {
+.text-input {
   flex: 1;
   padding: 12px 16px;
-  border: 1px solid #ddd;
-  border-radius: 25px;
+  border: 2px solid #e1e5e9;
+  border-radius: 24px;
   outline: none;
-  font-size: 14px;
+  font-size: 15px;
+  transition: border-color 0.2s;
 }
 
-.chat-input:focus {
+.text-input:focus {
   border-color: #007bff;
+}
+
+.text-input:disabled {
+  background: #f8f9fa;
+  color: #6c757d;
 }
 
 .send-btn {
@@ -326,9 +375,11 @@ h2 {
   color: white;
   border: none;
   padding: 12px 20px;
-  border-radius: 25px;
+  border-radius: 24px;
   cursor: pointer;
+  font-weight: 500;
   transition: background 0.2s;
+  min-width: 70px;
 }
 
 .send-btn:hover:not(:disabled) {
@@ -336,16 +387,32 @@ h2 {
 }
 
 .send-btn:disabled {
-  background: #ccc;
+  background: #6c757d;
   cursor: not-allowed;
 }
 
-.error-message {
+.error {
   background: #f8d7da;
   color: #721c24;
-  padding: 10px;
+  padding: 12px 16px;
   border-radius: 8px;
-  margin-top: 10px;
+  margin-top: 12px;
   font-size: 14px;
+  border: 1px solid #f5c6cb;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .song-assistant {
+    margin: 10px;
+  }
+  
+  .example-buttons {
+    flex-direction: column;
+  }
+  
+  .example-btn {
+    width: 100%;
+  }
 }
 </style>
